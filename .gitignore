@@ -1,0 +1,7 @@
+.env
+.env.bale
+.env.telegram
+.venv
+__pycache__/
+*.pyc
+*session.*
