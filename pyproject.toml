@@ -1,0 +1,11 @@
+[project]
+name = "bale-notification-handler"
+version = "0.1.0"
+description = "Bale notification handler"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "aiobale",
+    "python-dotenv",
+    "requests",
+]

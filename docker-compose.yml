@@ -1,0 +1,26 @@
+services:
+  bale-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.bale
+    env_file:
+      - .env.bale
+    environment:
+      RELAY_URL: http://telegram-relay:8080/bale-message
+    volumes:
+      - ./session.bale:/app/session.bale
+    stdin_open: true
+    tty: true
+    depends_on:
+      - telegram-relay
+    restart: unless-stopped
+
+  telegram-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile.telegram
+    env_file:
+      - .env.telegram
+    expose:
+      - "8080"
+    restart: unless-stopped
