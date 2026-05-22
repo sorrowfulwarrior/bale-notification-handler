@@ -25,6 +25,19 @@ client = Client(dp)
 has_logged_first_update = False
 
 
+def get_self_user_id() -> Optional[int]:
+    try:
+        return client.id
+    except Exception:
+        logger.warning("Could not determine authenticated Bale user id.", exc_info=True)
+        return None
+
+
+def is_self_sent_message(msg: Message) -> bool:
+    self_user_id = get_self_user_id()
+    return self_user_id is not None and msg.sender_id == self_user_id
+
+
 async def get_sender_profile(msg: Message) -> dict[str, str]:
     try:
         user = await msg.load_user()
@@ -162,6 +175,14 @@ async def print_incoming_message(msg: Message):
     if not has_logged_first_update:
         logger.info("Bale client connected successfully and received its first update.")
         has_logged_first_update = True
+
+    if is_self_sent_message(msg):
+        logger.info(
+            "Skipping self-sent Bale message with message_id=%s in chat_id=%s.",
+            msg.message_id,
+            msg.chat.id,
+        )
+        return
 
     text = msg.text or "[non-text message]"
     sender = await get_sender_profile(msg)
