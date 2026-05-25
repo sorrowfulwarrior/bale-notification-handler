@@ -23,6 +23,22 @@ telegram-relay container
     | Telegram Bot API
     v
 Telegram chat
+
+For Reply 
+
+    |
+    | Reply button + typed response
+    v
+telegram-relay container
+    |
+    | HTTP POST /bale-reply
+    | X-Relay-Token: RELAY_SHARED_SECRET
+    v
+bale-client container
+    |
+    | aiobale reply
+    v
+Original Bale message
 ```
 
 ### Services
@@ -33,15 +49,19 @@ Telegram chat
   - Reads the local `session.bale` login file.
   - Skips messages sent by your own Bale account.
   - Sends only incoming Bale message/call payloads to the internal relay.
+  - Receives internal reply requests on `/bale-reply` and replies to the
+    original Bale message.
 
 - `telegram-relay`
   - Runs `telegram_relay.py`.
   - Receives Bale payloads on `/bale-message`.
   - Validates `X-Relay-Token` against `RELAY_SHARED_SECRET`.
   - Sends the formatted message to Telegram using `TELEGRAM_BOT_TOKEN`.
+  - Polls Telegram for reply button clicks and reply text.
 
 The Telegram bot token is configured only in `telegram-relay`; the Bale client
-does not need it.
+does not need it. The Bale session file is configured only in `bale-client`; the
+Telegram relay does not need it.
 
 ## Prerequisites
 
@@ -71,6 +91,12 @@ Set these values in `.env.telegram`:
 ```text
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 TELEGRAM_CHAT_ID=your-telegram-chat-id
+```
+
+If `TELEGRAM_CHAT_ID` is a group chat, also set:
+
+```text
+TELEGRAM_ALLOWED_USER_ID=your-telegram-user-id
 ```
 
 Do not commit `.env.bale`, `.env.telegram`, or `session.bale`.
@@ -118,16 +144,23 @@ Start both services:
 docker compose up --build
 ```
 
-The relay is exposed only inside the Docker network with `expose: "8080"`.
-There is no host port published by default.
+The relay endpoints are exposed only inside the Docker network with Docker
+Compose `expose`. There are no host ports published by default.
 
 ## Message Behavior
 
 - Incoming Bale messages are forwarded to Telegram.
+- Each incoming Bale message includes a `Reply` button in Telegram.
+- Tapping `Reply` opens a Telegram reply prompt.
+- The text you send to that prompt is sent back to Bale as a reply to the
+  original Bale message.
 - Messages sent by your own Bale account are ignored.
 - Non-text messages are forwarded as `[non-text message]`.
 - Incoming call notifications are best-effort because Bale call events are not
   exposed as a stable documented `aiobale` event type.
+- Reply targets are stored in memory by `bale-client`, so replies only work
+  while the Bale client process that received the original message is still
+  running.
 
 When a call is detected, Telegram receives a message like:
 
@@ -148,9 +181,12 @@ What is protected:
 
 - The Telegram bot token is isolated to `telegram-relay`.
 - The internal relay requires `RELAY_SHARED_SECRET`.
-- The relay is not published to the host by default.
+- The Bale message and reply endpoints are not published to the host by default.
 - The Bale session file and env files are ignored by git.
 - The Bale client ignores self-sent messages before forwarding to Telegram.
+- Telegram replies are accepted only from the configured `TELEGRAM_CHAT_ID`.
+- If `TELEGRAM_ALLOWED_USER_ID` is set, only that Telegram user can trigger
+  replies.
 
 Known risks and things to keep in mind:
 
@@ -165,6 +201,8 @@ Known risks and things to keep in mind:
   rebuilds may pull newer dependency versions.
 - Incoming message text is logged by `bale-client`, so container logs may
   contain private message content.
+- Reply text is sent through the internal Docker network from `telegram-relay`
+  to `bale-client`.
 - The relay has no rate limiting. Keep it internal unless you add stronger
   authentication and abuse protection.
 

@@ -2,6 +2,10 @@ import asyncio
 import json
 import logging
 import os
+import secrets
+import threading
+from collections import OrderedDict
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
 
 import requests
@@ -19,10 +23,15 @@ logger = logging.getLogger(__name__)
 
 RELAY_URL = os.getenv("RELAY_URL", "http://telegram-relay:8080/bale-message")
 RELAY_SHARED_SECRET = os.getenv("RELAY_SHARED_SECRET")
+BALE_REPLY_HOST = os.getenv("BALE_REPLY_HOST", "0.0.0.0")
+BALE_REPLY_PORT = int(os.getenv("BALE_REPLY_PORT", "8081"))
+REPLY_CACHE_LIMIT = int(os.getenv("REPLY_CACHE_LIMIT", "1000"))
 
 dp = Dispatcher()
 client = Client(dp)
 has_logged_first_update = False
+app_loop: Optional[asyncio.AbstractEventLoop] = None
+reply_targets: OrderedDict[str, Message] = OrderedDict()
 
 
 def get_self_user_id() -> Optional[int]:
@@ -75,6 +84,76 @@ async def notify_telegram(payload: dict[str, Any]) -> None:
         await asyncio.to_thread(forward_to_telegram, payload)
     except Exception:
         logger.exception("Failed to forward Bale event to Telegram relay.")
+
+
+def remember_reply_target(msg: Message) -> str:
+    token = secrets.token_urlsafe(18)
+    reply_targets[token] = msg
+    reply_targets.move_to_end(token)
+
+    while len(reply_targets) > REPLY_CACHE_LIMIT:
+        reply_targets.popitem(last=False)
+
+    return token
+
+
+async def send_bale_reply(reply_token: str, text: str) -> None:
+    target = reply_targets.get(reply_token)
+    if target is None:
+        raise ValueError("Reply target was not found or expired.")
+
+    await target.reply(text)
+
+
+class BaleReplyHandler(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        if self.path != "/bale-reply":
+            self.send_error(404)
+            return
+
+        if RELAY_SHARED_SECRET:
+            relay_token = self.headers.get("X-Relay-Token")
+            if relay_token != RELAY_SHARED_SECRET:
+                logger.warning("Rejected Bale reply request with invalid relay token.")
+                self.send_error(401)
+                return
+
+        content_length = int(self.headers.get("Content-Length", "0"))
+        raw_body = self.rfile.read(content_length)
+
+        try:
+            payload = json.loads(raw_body)
+            reply_token = str(payload["reply_token"])
+            text = str(payload["text"]).strip()
+            if not text:
+                raise ValueError("Reply text cannot be empty.")
+            if app_loop is None:
+                raise RuntimeError("Bale event loop is not ready.")
+
+            future = asyncio.run_coroutine_threadsafe(
+                send_bale_reply(reply_token, text),
+                app_loop,
+            )
+            future.result(timeout=20)
+        except Exception:
+            logger.exception("Failed to send Bale reply.")
+            self.send_error(500)
+            return
+
+        logger.info("Sent Bale reply.")
+        self.send_response(204)
+        self.end_headers()
+
+    def log_message(self, format: str, *args) -> None:
+        logger.debug(format, *args)
+
+
+def start_bale_reply_server() -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer((BALE_REPLY_HOST, BALE_REPLY_PORT), BaleReplyHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logger.info("Started Bale reply endpoint on %s:%s.", BALE_REPLY_HOST, BALE_REPLY_PORT)
+    return server
 
 
 def detect_call_type(text: str) -> Optional[str]:
@@ -218,16 +297,29 @@ async def print_incoming_message(msg: Message):
         "sender_id": msg.sender_id,
         "chat_id": msg.chat.id,
         "message_id": msg.message_id,
+        "reply_token": remember_reply_target(msg),
         "text": text,
     }
 
     await notify_telegram(payload)
 
 
+async def run() -> None:
+    global app_loop
+
+    app_loop = asyncio.get_running_loop()
+    reply_server = start_bale_reply_server()
+    try:
+        await client.start()
+    finally:
+        reply_server.shutdown()
+        reply_server.server_close()
+
+
 if __name__ == "__main__":
     logger.info("Starting Bale client...")
     try:
-        client.run()
+        asyncio.run(run())
     except Exception:
         logger.exception("Bale client stopped because of an unexpected error.")
         raise

@@ -7,8 +7,12 @@ services:
       - .env.bale
     environment:
       RELAY_URL: http://telegram-relay:8080/bale-message
+      BALE_REPLY_HOST: 0.0.0.0
+      BALE_REPLY_PORT: 8081
     volumes:
       - ./session.bale:/app/session.bale
+    expose:
+      - "8081"
     stdin_open: true
     tty: true
     depends_on:
@@ -21,6 +25,8 @@ services:
       dockerfile: Dockerfile.telegram
     env_file:
       - .env.telegram
+    environment:
+      BALE_REPLY_URL: http://bale-client:8081/bale-reply
     expose:
       - "8080"
     restart: unless-stopped
