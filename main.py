@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 RELAY_URL = os.getenv("RELAY_URL", "http://telegram-relay:8080/bale-message")
 RELAY_SHARED_SECRET = os.getenv("RELAY_SHARED_SECRET")
+BALE_ACCOUNT_NUMBER = os.getenv("BALE_ACCOUNT_NUMBER")
+BALE_REPLY_CALLBACK_URL = os.getenv("BALE_REPLY_CALLBACK_URL")
 BALE_REPLY_HOST = os.getenv("BALE_REPLY_HOST", "0.0.0.0")
 BALE_REPLY_PORT = int(os.getenv("BALE_REPLY_PORT", "8081"))
 REPLY_CACHE_LIMIT = int(os.getenv("REPLY_CACHE_LIMIT", "1000"))
@@ -71,6 +73,11 @@ async def get_sender_profile(msg: Message) -> dict[str, str]:
 
 
 def forward_to_telegram(payload: dict[str, Any]) -> None:
+    if BALE_ACCOUNT_NUMBER:
+        payload["bale_account_number"] = BALE_ACCOUNT_NUMBER
+    if BALE_REPLY_CALLBACK_URL:
+        payload["bale_reply_url"] = BALE_REPLY_CALLBACK_URL
+
     headers = {}
     if RELAY_SHARED_SECRET:
         headers["X-Relay-Token"] = RELAY_SHARED_SECRET

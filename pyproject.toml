@@ -9,3 +9,20 @@ dependencies = [
     "python-dotenv",
     "requests",
 ]
+
+[tool.poetry]
+name = "bale-notification-handler"
+version = "0.1.0"
+description = "Bale notification handler"
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.9,<4.0"
+aiobale = "*"
+python-dotenv = "*"
+requests = "*"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"

@@ -1,0 +1,52 @@
+services:
+  bale-client-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.bale
+    env_file:
+      - .env.bale.1
+    environment:
+      RELAY_URL: http://telegram-relay:8080/bale-message
+      BALE_REPLY_HOST: 0.0.0.0
+      BALE_REPLY_PORT: 8081
+    volumes:
+      - ./sessions/bale-client-1.session.bale:/app/session.bale
+    expose:
+      - "8081"
+    stdin_open: true
+    tty: true
+    depends_on:
+      - telegram-relay
+    restart: unless-stopped
+
+  bale-client-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.bale
+    env_file:
+      - .env.bale.2
+    environment:
+      RELAY_URL: http://telegram-relay:8080/bale-message
+      BALE_REPLY_HOST: 0.0.0.0
+      BALE_REPLY_PORT: 8081
+    volumes:
+      - ./sessions/bale-client-2.session.bale:/app/session.bale
+    expose:
+      - "8081"
+    stdin_open: true
+    tty: true
+    depends_on:
+      - telegram-relay
+    restart: unless-stopped
+
+  telegram-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile.telegram
+    env_file:
+      - .env.telegram
+    environment:
+      BALE_REPLY_URL: 'http://bale-client-1:8081/bale-reply'
+    expose:
+      - "8080"
+    restart: unless-stopped
