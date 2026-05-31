@@ -4,6 +4,7 @@ import logging
 import os
 import secrets
 import threading
+import time
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
@@ -28,12 +29,16 @@ BALE_REPLY_CALLBACK_URL = os.getenv("BALE_REPLY_CALLBACK_URL")
 BALE_REPLY_HOST = os.getenv("BALE_REPLY_HOST", "0.0.0.0")
 BALE_REPLY_PORT = int(os.getenv("BALE_REPLY_PORT", "8081"))
 REPLY_CACHE_LIMIT = int(os.getenv("REPLY_CACHE_LIMIT", "1000"))
+OUTBOUND_REPLY_SUPPRESSION_TTL = float(
+    os.getenv("OUTBOUND_REPLY_SUPPRESSION_TTL", "120")
+)
 
 dp = Dispatcher()
 client = Client(dp)
 has_logged_first_update = False
 app_loop: Optional[asyncio.AbstractEventLoop] = None
 reply_targets: OrderedDict[str, Message] = OrderedDict()
+outbound_reply_suppressions: OrderedDict[tuple[int, str], float] = OrderedDict()
 
 
 def get_self_user_id() -> Optional[int]:
@@ -104,12 +109,50 @@ def remember_reply_target(msg: Message) -> str:
     return token
 
 
+def remember_outbound_reply(chat_id: int, text: str) -> tuple[int, str]:
+    key = (chat_id, text)
+    outbound_reply_suppressions[key] = time.monotonic()
+    outbound_reply_suppressions.move_to_end(key)
+
+    while len(outbound_reply_suppressions) > REPLY_CACHE_LIMIT:
+        outbound_reply_suppressions.popitem(last=False)
+
+    return key
+
+
+def forget_outbound_reply(key: tuple[int, str]) -> None:
+    outbound_reply_suppressions.pop(key, None)
+
+
+def consume_outbound_reply_if_echoed(chat_id: int, text: str) -> bool:
+    now = time.monotonic()
+    expired_keys = [
+        key
+        for key, created_at in outbound_reply_suppressions.items()
+        if now - created_at > OUTBOUND_REPLY_SUPPRESSION_TTL
+    ]
+    for key in expired_keys:
+        outbound_reply_suppressions.pop(key, None)
+
+    key = (chat_id, text)
+    if key not in outbound_reply_suppressions:
+        return False
+
+    outbound_reply_suppressions.pop(key, None)
+    return True
+
+
 async def send_bale_reply(reply_token: str, text: str) -> None:
     target = reply_targets.get(reply_token)
     if target is None:
         raise ValueError("Reply target was not found or expired.")
 
-    await target.reply(text)
+    suppression_key = remember_outbound_reply(target.chat.id, text)
+    try:
+        await target.reply(text)
+    except Exception:
+        forget_outbound_reply(suppression_key)
+        raise
 
 
 class BaleReplyHandler(BaseHTTPRequestHandler):
@@ -262,6 +305,8 @@ async def print_incoming_message(msg: Message):
         logger.info("Bale client connected successfully and received its first update.")
         has_logged_first_update = True
 
+    text = msg.text or "[non-text message]"
+
     if is_self_sent_message(msg):
         logger.info(
             "Skipping self-sent Bale message with message_id=%s in chat_id=%s.",
@@ -270,7 +315,14 @@ async def print_incoming_message(msg: Message):
         )
         return
 
-    text = msg.text or "[non-text message]"
+    if consume_outbound_reply_if_echoed(msg.chat.id, text):
+        logger.info(
+            "Skipping Bale update for Telegram-originated reply with message_id=%s in chat_id=%s.",
+            msg.message_id,
+            msg.chat.id,
+        )
+        return
+
     sender = await get_sender_profile(msg)
     service_message_text = get_service_message_text(msg)
 

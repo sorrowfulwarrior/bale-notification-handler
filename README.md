@@ -103,17 +103,18 @@ Example answers:
 ```text
 How many Bale clients do you want to configure? 2
 Telegram bot token (hidden while typing): 
-Optional Telegram allowed user id for replies (leave empty for none): 123456789
 Relay shared secret (hidden, leave empty to generate one): 
 
 Bale client 1
   Bale account number, international format without +: 989121111111
   Telegram chat id that should receive this account's notifications: 123456789
+  Allowed Telegram user id for replies: 123456789
   Docker service name for this Bale client (default: bale-client-1): bale-client-work
 
 Bale client 2
   Bale account number, international format without +: 989122222222
   Telegram chat id that should receive this account's notifications: -1001234567890
+  Allowed Telegram user id for replies: 987654321
   Docker service name for this Bale client (default: bale-client-2): bale-client-family
 ```
 
@@ -126,6 +127,7 @@ The generated `.env.telegram` route map will look like:
 
 ```text
 TELEGRAM_ACCOUNT_ROUTES='989121111111=123456789,989122222222=-1001234567890'
+TELEGRAM_ALLOWED_USER_ID='123456789,987654321'
 ```
 
 The generated Compose file will include one Bale client service per configured
@@ -161,29 +163,26 @@ When `TELEGRAM_ACCOUNT_ROUTES` is set, `TELEGRAM_CHAT_ID` is ignored for
 incoming Bale notifications. If an incoming routed payload has no matching Bale
 account number, the relay logs an error and does not send the notification.
 
-If `TELEGRAM_CHAT_ID` is a group chat, also set:
+If you want to restrict who can use the Telegram reply button, set:
 
 ```text
-TELEGRAM_ALLOWED_USER_ID=your-telegram-user-id
+TELEGRAM_ALLOWED_USER_ID=123456789
 ```
 
-`TELEGRAM_ALLOWED_USER_ID` is optional. It limits who can use Telegram reply
-buttons to send messages back to Bale. This is useful when notifications go to
-a Telegram group, because everyone in the group may see the bot message, but
-you may want only one Telegram account to be allowed to click `Reply` and send
-the response. Leave it empty for a private one-to-one bot chat, or when everyone
-in the configured Telegram chat is allowed to reply.
+`TELEGRAM_ALLOWED_USER_ID` is optional. It can contain one Telegram user id or
+multiple comma-separated user ids. If it is set, only those Telegram accounts
+can click `Reply` and send responses back to Bale. If it is empty, anyone in the
+configured Telegram chat can reply.
 
 Example:
 
 ```text
-TELEGRAM_ACCOUNT_ROUTES='989121111111=-1001234567890'
-TELEGRAM_ALLOWED_USER_ID='123456789'
+TELEGRAM_ACCOUNT_ROUTES='989121111111=123456789,989122222222=987654321'
+TELEGRAM_ALLOWED_USER_ID='123456789,987654321'
 ```
 
-In this example, notifications for Bale account `989121111111` go to Telegram
-group `-1001234567890`, but only Telegram user `123456789` can send replies
-back to Bale.
+In this example, each routed Telegram user can reply with their own Telegram
+user id.
 
 Do not commit `.env.bale`, `.env.bale.N`, `.env.telegram`, `session.bale`, or
 the `sessions/` directory.
@@ -299,8 +298,8 @@ What is protected:
 - Telegram replies are accepted only from the configured `TELEGRAM_CHAT_ID`.
 - In routed mode, Telegram replies are accepted only from the chat id that
   received the routed notification.
-- If `TELEGRAM_ALLOWED_USER_ID` is set, only that Telegram user can trigger
-  replies.
+- If `TELEGRAM_ALLOWED_USER_ID` is set, only those Telegram users can trigger
+  replies. Multiple ids can be separated with commas.
 
 Known risks and things to keep in mind:
 

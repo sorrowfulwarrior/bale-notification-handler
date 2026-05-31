@@ -23,7 +23,7 @@ PORT = int(os.getenv("TELEGRAM_RELAY_PORT", "8080"))
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TELEGRAM_ACCOUNT_ROUTES = os.getenv("TELEGRAM_ACCOUNT_ROUTES", "")
-TELEGRAM_ALLOWED_USER_ID = os.getenv("TELEGRAM_ALLOWED_USER_ID")
+TELEGRAM_ALLOWED_USER_ID = os.getenv("TELEGRAM_ALLOWED_USER_ID", "")
 RELAY_SHARED_SECRET = os.getenv("RELAY_SHARED_SECRET")
 BALE_REPLY_URL = os.getenv("BALE_REPLY_URL", "http://bale-client:8081/bale-reply")
 TELEGRAM_POLL_INTERVAL = float(os.getenv("TELEGRAM_POLL_INTERVAL", "2"))
@@ -69,7 +69,16 @@ def parse_account_routes(raw_routes: str) -> dict[str, str]:
     return routes
 
 
+def parse_allowed_user_ids(raw_user_ids: str) -> set[str]:
+    return {
+        user_id.strip()
+        for user_id in raw_user_ids.split(",")
+        if user_id.strip()
+    }
+
+
 ACCOUNT_ROUTES = parse_account_routes(TELEGRAM_ACCOUNT_ROUTES)
+ALLOWED_USER_IDS = parse_allowed_user_ids(TELEGRAM_ALLOWED_USER_ID)
 reply_targets: dict[str, ReplyTarget] = {}
 pending_replies: dict[int, PendingReply] = {}
 
@@ -92,8 +101,8 @@ def is_allowed_telegram_sender(
     )
     if chat_id not in allowed_chat_ids:
         return False
-    if TELEGRAM_ALLOWED_USER_ID:
-        return str(sender.get("id")) == str(TELEGRAM_ALLOWED_USER_ID)
+    if ALLOWED_USER_IDS:
+        return str(sender.get("id")) in ALLOWED_USER_IDS
     return True
 
 

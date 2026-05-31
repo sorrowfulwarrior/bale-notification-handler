@@ -144,11 +144,6 @@ def main() -> None:
         "Telegram bot token. Example: 123456:ABC-DEF...: "
     )
     print()
-    telegram_allowed_user_id = prompt_optional(
-        "Allowed Telegram user id. Example: 123456789. Default: empty: "
-    )
-
-    print()
     print("Relay shared secret")
     shared_secret = prompt_secret_optional(
         "Relay shared secret. Example: a-long-random-string. Default: generate: "
@@ -161,6 +156,7 @@ def main() -> None:
     bale_env_files: list[Path] = []
     bale_env_contents: list[str] = []
     client_services: list[str] = []
+    allowed_user_ids: list[str] = []
 
     for index in range(1, client_count + 1):
         print()
@@ -172,6 +168,12 @@ def main() -> None:
         telegram_chat_id = prompt_required(
             "  Telegram chat id. Example: 123456789 or -1001234567890: "
         )
+        print()
+        allowed_user_id = prompt_optional(
+            "  Allowed Telegram user id for replies. Example: 123456789. Default: empty: "
+        )
+        if allowed_user_id and allowed_user_id not in allowed_user_ids:
+            allowed_user_ids.append(allowed_user_id)
         print()
         service_name = prompt_optional(
             f"  Docker service name. Example: bale-client-work. Default: bale-client-{index}: "
@@ -202,9 +204,9 @@ def main() -> None:
         "# Legacy single-chat fallback. Ignored when TELEGRAM_ACCOUNT_ROUTES is set.",
         "TELEGRAM_CHAT_ID=",
     ]
-    if telegram_allowed_user_id:
+    if allowed_user_ids:
         telegram_env_lines.append(
-            f"TELEGRAM_ALLOWED_USER_ID={env_value(telegram_allowed_user_id)}"
+            f"TELEGRAM_ALLOWED_USER_ID={env_value(','.join(allowed_user_ids))}"
         )
     telegram_env_lines.append(f"RELAY_SHARED_SECRET={env_value(shared_secret)}")
 
